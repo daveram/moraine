@@ -1201,6 +1201,28 @@ pub(super) struct McpConfigWrite {
     plugin_cache_root: Option<PathBuf>,
 }
 
+fn resolve_moraine_binary_command(home: &Path) -> String {
+    let local_bin = home.join(".local").join("bin").join("moraine");
+    if local_bin.is_file() {
+        return local_bin.display().to_string();
+    }
+    let moraine_bin = home.join(".moraine").join("bin").join("moraine");
+    if moraine_bin.is_file() {
+        return moraine_bin.display().to_string();
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(file_name) = exe.file_name().and_then(|f| f.to_str()) {
+            if file_name == "moraine" || file_name == "moraine.exe" {
+                if let Ok(canon) = exe.canonicalize() {
+                    return canon.display().to_string();
+                }
+                return exe.display().to_string();
+            }
+        }
+    }
+    "moraine".to_string()
+}
+
 impl McpConfigWrite {
     fn plugin_manifest_cleanup(cache_root: PathBuf, path: PathBuf) -> Self {
         Self {
@@ -1213,10 +1235,13 @@ impl McpConfigWrite {
     }
 
     pub(super) fn antigravity(home: &Path, config_target: &ConfigTarget) -> Self {
+        let command_bin = resolve_moraine_binary_command(home);
+        let mut command = vec![command_bin];
+        command.extend(mcp_run_args(config_target));
         Self {
             path: home.join(".gemini").join("config").join("mcp_config.json"),
             kind: McpConfigKind::Antigravity,
-            command: mcp_run_args(config_target),
+            command,
             nac_write: None,
             plugin_cache_root: None,
         }
@@ -1380,8 +1405,8 @@ impl McpConfigWrite {
     fn server_value(&self) -> Value {
         match self.kind {
             McpConfigKind::Antigravity => serde_json::json!({
-                "command": "moraine",
-                "args": self.command.clone(),
+                "command": self.command.first().map(String::as_str).unwrap_or("moraine"),
+                "args": if self.command.is_empty() { vec![] } else { self.command[1..].to_vec() },
             }),
             McpConfigKind::Cursor => serde_json::json!({
                 "type": "stdio",
