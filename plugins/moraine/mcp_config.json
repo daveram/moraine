@@ -2,7 +2,7 @@
   "mcpServers": {
     "moraine": {
       "command": "moraine",
-      "args": ["run", "mcp"]
+      "args": ["run", "mcp", "--", "--project-only"]
     }
   }
 }

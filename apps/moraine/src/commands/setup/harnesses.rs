@@ -16,6 +16,14 @@ pub(super) mod nac;
 const HERMES_PLUGIN_REMOTE_IDENTIFIER: &str = "eric-tramel/moraine/plugins/hermes-moraine";
 const HERMES_PLUGIN_RELATIVE_PATH: &str = "plugins/hermes-moraine";
 const KIRO_STEERING: &str = include_str!("kiro-steering.md");
+const ANTIGRAVITY_PLUGIN_MANIFEST: &str =
+    include_str!("../../../../../plugins/moraine/plugin.json");
+const ANTIGRAVITY_BUG_REPORT_SKILL: &str =
+    include_str!("../../../../../plugins/moraine/skills/bug-report/SKILL.md");
+const ANTIGRAVITY_REALTIME_PEEK_SKILL: &str =
+    include_str!("../../../../../plugins/moraine/skills/realtime-peek/SKILL.md");
+const ANTIGRAVITY_SESSION_SEARCH_SKILL: &str =
+    include_str!("../../../../../plugins/moraine/skills/session-search/SKILL.md");
 
 #[derive(Debug, Clone)]
 pub(super) struct SetupPathContext {
@@ -672,6 +680,47 @@ pub(super) fn default_ingest_sources(
         materialize: store.auto_ingest,
     }])
 }
+fn antigravity_plugin_root(home: &Path) -> PathBuf {
+    home.join(".gemini")
+        .join("config")
+        .join("plugins")
+        .join("moraine")
+}
+
+fn antigravity_plugin_cleanup_writes(home: &Path) -> Vec<McpConfigWrite> {
+    let path = antigravity_plugin_root(home).join("mcp_config.json");
+    match path.try_exists() {
+        Ok(true) => vec![McpConfigWrite::antigravity_plugin_cleanup(path)],
+        Ok(false) => Vec::new(),
+        Err(_) => Vec::new(),
+    }
+}
+
+fn antigravity_plugin_writes(home: &Path) -> Vec<ManagedFileWrite> {
+    let root = antigravity_plugin_root(home);
+    vec![
+        ManagedFileWrite::new(
+            root.join("plugin.json"),
+            "Antigravity plugin manifest",
+            ANTIGRAVITY_PLUGIN_MANIFEST.to_string(),
+        ),
+        ManagedFileWrite::new(
+            root.join("skills").join("bug-report").join("SKILL.md"),
+            "Antigravity bug-report skill",
+            ANTIGRAVITY_BUG_REPORT_SKILL.to_string(),
+        ),
+        ManagedFileWrite::new(
+            root.join("skills").join("realtime-peek").join("SKILL.md"),
+            "Antigravity realtime-peek skill",
+            ANTIGRAVITY_REALTIME_PEEK_SKILL.to_string(),
+        ),
+        ManagedFileWrite::new(
+            root.join("skills").join("session-search").join("SKILL.md"),
+            "Antigravity session-search skill",
+            ANTIGRAVITY_SESSION_SEARCH_SKILL.to_string(),
+        ),
+    ]
+}
 
 fn obsolete_plugin_manifest_writes(
     paths: &SetupPathContext,
@@ -746,12 +795,27 @@ pub(super) fn mcp_plan(
         _ => None,
     };
     Ok(match target {
-        SetupMcpTarget::Antigravity => McpPlan::write_config(
-            target,
-            home.as_ref()
-                .map(|home| McpConfigWrite::antigravity(home, config_target)),
-            antigravity_snippet(config_target),
-        ),
+        SetupMcpTarget::Antigravity => {
+            let Some(home) = home.as_deref() else {
+                return Ok(McpPlan::manual(
+                    target,
+                    format!(
+                        "HOME is not set, so Moraine cannot choose Antigravity's global config or plugin directories.\n{}",
+                        antigravity_snippet(config_target)
+                    ),
+                ));
+            };
+            let mut config_writes = vec![McpConfigWrite::antigravity(home, config_target)];
+            config_writes.extend(antigravity_plugin_cleanup_writes(home));
+            McpPlan {
+                target,
+                action: super::McpAction::WriteConfig,
+                steps: Vec::new(),
+                config_writes,
+                managed_writes: antigravity_plugin_writes(home),
+                manual_snippet: None,
+            }
+        }
         SetupMcpTarget::ClaudeCode => McpPlan {
             target,
             action: super::McpAction::Execute,
@@ -1247,6 +1311,16 @@ impl McpConfigWrite {
         }
     }
 
+    pub(super) fn antigravity_plugin_cleanup(path: PathBuf) -> Self {
+        Self {
+            path,
+            kind: McpConfigKind::AntigravityPluginCleanup,
+            command: Vec::new(),
+            nac_write: None,
+            plugin_cache_root: None,
+        }
+    }
+
     pub(super) fn cursor(home: &Path, config_target: &ConfigTarget) -> Self {
         Self {
             path: home.join(".cursor").join("mcp.json"),
@@ -1342,6 +1416,9 @@ impl McpConfigWrite {
     pub(super) fn is_plugin_manifest_cleanup(&self) -> bool {
         matches!(self.kind, McpConfigKind::PluginManifestCleanup)
     }
+    pub(super) fn is_antigravity_plugin_cleanup(&self) -> bool {
+        matches!(self.kind, McpConfigKind::AntigravityPluginCleanup)
+    }
 
     pub(super) fn plugin_cache_root(&self) -> Option<&Path> {
         self.plugin_cache_root.as_deref()
@@ -1395,7 +1472,7 @@ impl McpConfigWrite {
                 servers.insert("moraine".to_string(), self.server_value());
             }
             McpConfigKind::Nac => bail!("NAC MCP config uses TOML, not JSON"),
-            McpConfigKind::PluginManifestCleanup => {
+            McpConfigKind::PluginManifestCleanup | McpConfigKind::AntigravityPluginCleanup => {
                 root.remove("mcpServers");
             }
         }
@@ -1430,7 +1507,9 @@ impl McpConfigWrite {
                 "command": self.command.clone(),
                 "enabled": true,
             }),
-            McpConfigKind::Nac | McpConfigKind::PluginManifestCleanup => Value::Null,
+            McpConfigKind::Nac
+            | McpConfigKind::PluginManifestCleanup
+            | McpConfigKind::AntigravityPluginCleanup => Value::Null,
         }
     }
 
@@ -1445,6 +1524,7 @@ impl McpConfigWrite {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum McpConfigKind {
     Antigravity,
+    AntigravityPluginCleanup,
     Cursor,
     Pi,
     Omp,
@@ -1458,6 +1538,7 @@ impl McpConfigKind {
     fn label(self) -> &'static str {
         match self {
             McpConfigKind::Antigravity => "Antigravity",
+            McpConfigKind::AntigravityPluginCleanup => "Antigravity plugin MCP cleanup",
             McpConfigKind::Cursor => "Cursor",
             McpConfigKind::Pi => "Pi",
             McpConfigKind::Omp => "OMP",
@@ -1471,12 +1552,12 @@ impl McpConfigKind {
     fn format(self) -> McpConfigFormat {
         match self {
             McpConfigKind::Antigravity
-            | McpConfigKind::Cursor
+            | McpConfigKind::AntigravityPluginCleanup
             | McpConfigKind::Pi
             | McpConfigKind::Omp
             | McpConfigKind::PrimeAgent
             | McpConfigKind::PluginManifestCleanup => McpConfigFormat::Json,
-            McpConfigKind::OpenCode => McpConfigFormat::Jsonc,
+            McpConfigKind::Cursor | McpConfigKind::OpenCode => McpConfigFormat::Jsonc,
             McpConfigKind::Nac => McpConfigFormat::Toml,
         }
     }
@@ -1664,7 +1745,7 @@ pub(super) fn kiro_args(config_target: &ConfigTarget, moraine_command: &str) -> 
 
 fn antigravity_snippet(config_target: &ConfigTarget) -> String {
     snippet(
-        "Add this server to ~/.gemini/config/mcp_config.json for Antigravity & Antigravity IDE",
+        "Add this server to ~/.gemini/config/mcp_config.json for Antigravity & Antigravity IDE.\nTo mirror Moraine's managed global plugin install, also copy or symlink plugins/moraine/ to ~/.gemini/config/plugins/moraine/ and remove any stale ~/.gemini/config/plugins/moraine/mcp_config.json",
         Value::Object(McpConfigWrite::antigravity(Path::new("~"), config_target).snippet_root()),
     )
 }

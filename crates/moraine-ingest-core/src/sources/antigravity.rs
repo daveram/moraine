@@ -96,6 +96,9 @@ fn extract_antigravity_model(record: &Value, model_hint: &str) -> String {
             }
         }
     }
+    // Preserve the historical fallback until Antigravity gets a replay-safe
+    // migration path for already-ingested sessions whose event identity
+    // included this placeholder model.
     "gemini-3.7-flash".to_string()
 }
 
@@ -353,6 +356,89 @@ fn normalize_antigravity_record(
                 .content_types(["tool_result"]);
 
             emitter.push_event(event);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::normalize::normalize_record;
+    use serde_json::json;
+
+    const SOURCE_FILE: &str =
+        "/fixtures/antigravity/11111111-2222-4333-8444-555555555555/transcript.jsonl";
+
+    fn source_ctx<'a>(
+        source_file: &'a str,
+        session_hint: &'a str,
+        top_type: &'a str,
+    ) -> SourceRecordContext<'a> {
+        SourceRecordContext {
+            source_name: "antigravity",
+            source_file,
+            session_hint,
+            top_type,
+            base_uid: "raw:base",
+        }
+    }
+
+    fn normalize(record: Value) -> crate::model::NormalizedRecord {
+        normalize_record(
+            &record,
+            "antigravity",
+            "antigravity",
+            SOURCE_FILE,
+            1,
+            0,
+            1,
+            0,
+            "",
+            "",
+            "",
+        )
+        .expect("normalize Antigravity record")
+    }
+
+    #[test]
+    fn explicit_session_fields_override_path_uuid() {
+        assert_eq!(
+            ANTIGRAVITY.session_id(
+                &json!({
+                    "type": "SYSTEM",
+                    "session_id": "session-123",
+                    "conversation_id": "conversation-ignored",
+                }),
+                &source_ctx(SOURCE_FILE, "", "SYSTEM"),
+            ),
+            "session-123"
+        );
+        assert_eq!(
+            ANTIGRAVITY.session_id(
+                &json!({
+                    "type": "SYSTEM",
+                    "conversation_id": "conversation-123",
+                }),
+                &source_ctx(SOURCE_FILE, "", "SYSTEM"),
+            ),
+            "conversation-123"
+        );
+    }
+
+    #[test]
+    fn conversation_history_and_system_normalize_as_checkpoints() {
+        for top_type in ["CONVERSATION_HISTORY", "SYSTEM"] {
+            let normalized = normalize(json!({
+                "type": top_type,
+                "created_at": "2026-08-15T19:10:06.000Z",
+                "content": "checkpoint text",
+            }));
+            assert_eq!(normalized.event_rows.len(), 1, "{top_type}");
+            let event = &normalized.event_rows[0];
+            assert_eq!(event["event_kind"], "session_meta", "{top_type}");
+            assert_eq!(event["payload_type"], "unknown", "{top_type}");
+            assert_eq!(event["actor_kind"], "system", "{top_type}");
+            assert_eq!(event["text_content"], "checkpoint text", "{top_type}");
         }
     }
 }
