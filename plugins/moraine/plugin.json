@@ -1,0 +1,23 @@
+{
+  "name": "moraine",
+  "version": "0.7.3",
+  "displayName": "Moraine",
+  "description": "Antigravity plugin for Moraine MCP session search, realtime agent awareness, and sanitized bug reports.",
+  "author": {
+    "name": "Moraine maintainers",
+    "email": "eric.tramel@gmail.com",
+    "url": "https://github.com/eric-tramel/moraine"
+  },
+  "homepage": "https://github.com/eric-tramel/moraine",
+  "repository": "https://github.com/eric-tramel/moraine",
+  "license": "Apache-2.0",
+  "keywords": [
+    "moraine",
+    "mcp",
+    "antigravity",
+    "agent-memory",
+    "session-search",
+    "realtime-agents",
+    "bug-report"
+  ]
+}

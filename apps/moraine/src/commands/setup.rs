@@ -5673,6 +5673,44 @@ host = "127.42.0.9"
     }
 
     #[test]
+    fn antigravity_config_write_merges_mcp_config_json() {
+        let home = temp_path("antigravity-home");
+        let gemini_config_dir = home.join(".gemini").join("config");
+        fs::create_dir_all(&gemini_config_dir).expect("create gemini config dir");
+        let path = gemini_config_dir.join("mcp_config.json");
+        fs::write(&path, r#"{"mcpServers":{"other":{"command":"node"}}}"#)
+            .expect("write existing antigravity config");
+
+        let target = ConfigTarget {
+            path: PathBuf::from("/tmp/config.toml"),
+            source: ConfigTargetSource::HomeDefault,
+        };
+        let write = McpConfigWrite::antigravity(&home, &target);
+        let report = apply_mcp_config_write(&write).expect("write antigravity config");
+        assert_eq!(report.action, "updated");
+
+        let value: Value =
+            serde_json::from_str(&fs::read_to_string(&path).expect("read antigravity config"))
+                .expect("antigravity config json");
+        assert_eq!(value["mcpServers"]["other"]["command"], "node");
+        assert_eq!(value["mcpServers"]["moraine"]["command"], "moraine");
+        assert_eq!(
+            value["mcpServers"]["moraine"]["args"],
+            serde_json::json!(["run", "mcp"])
+        );
+        #[cfg(unix)]
+        assert_eq!(
+            fs::metadata(&path)
+                .expect("antigravity metadata")
+                .permissions()
+                .mode()
+                & 0o777,
+            0o600
+        );
+        let _ = fs::remove_dir_all(home);
+    }
+
+    #[test]
     fn nac_config_write_preserves_model_and_storage_toml() {
         let nac_home = temp_path("nac-home");
         fs::create_dir_all(&nac_home).expect("create NAC config dir");

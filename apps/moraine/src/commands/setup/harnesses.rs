@@ -264,6 +264,7 @@ fn set_bool(table: &mut Table, key: &str, expected: bool) -> bool {
 #[derive(Debug, Clone, Copy)]
 enum ProbePaths {
     None,
+    Antigravity,
     OpenCode,
     Cursor,
     Nac,
@@ -276,6 +277,10 @@ impl ProbePaths {
     fn paths(self, home: &Path) -> Vec<PathBuf> {
         match self {
             ProbePaths::None => Vec::new(),
+            ProbePaths::Antigravity => vec![
+                home.join(".gemini").join("antigravity"),
+                home.join(".gemini").join("config"),
+            ],
             ProbePaths::OpenCode => vec![
                 home.join(".config").join("opencode"),
                 home.join(".local").join("share").join("opencode"),
@@ -471,8 +476,24 @@ const OMP_INGEST: [DefaultIngestSource; 1] = [DefaultIngestSource {
     format: Some("jsonl"),
 }];
 
+const ANTIGRAVITY_INGEST: [DefaultIngestSource; 1] = [DefaultIngestSource {
+    name: "antigravity",
+    harness: "antigravity",
+    glob: "~/.gemini/antigravity/brain/*/.system_generated/logs/transcript.jsonl",
+    watch_root: "~/.gemini/antigravity/brain",
+    format: Some("jsonl"),
+}];
+
 const NAC_INGEST: [DefaultIngestSource; 0] = [];
-const SPECS: [HarnessSpec; 12] = [
+const SPECS: [HarnessSpec; 13] = [
+    HarnessSpec {
+        target: SetupMcpTarget::Antigravity,
+        label: "Antigravity",
+        setup_kind: "MCP config",
+        programs: &["agy", "antigravity"],
+        probe_paths: ProbePaths::Antigravity,
+        ingest_sources: &ANTIGRAVITY_INGEST,
+    },
     HarnessSpec {
         target: SetupMcpTarget::ClaudeCode,
         label: "Claude Code",
@@ -725,6 +746,12 @@ pub(super) fn mcp_plan(
         _ => None,
     };
     Ok(match target {
+        SetupMcpTarget::Antigravity => McpPlan::write_config(
+            target,
+            home.as_ref()
+                .map(|home| McpConfigWrite::antigravity(home, config_target)),
+            antigravity_snippet(config_target),
+        ),
         SetupMcpTarget::ClaudeCode => McpPlan {
             target,
             action: super::McpAction::Execute,
@@ -1185,6 +1212,16 @@ impl McpConfigWrite {
         }
     }
 
+    pub(super) fn antigravity(home: &Path, config_target: &ConfigTarget) -> Self {
+        Self {
+            path: home.join(".gemini").join("config").join("mcp_config.json"),
+            kind: McpConfigKind::Antigravity,
+            command: mcp_run_args(config_target),
+            nac_write: None,
+            plugin_cache_root: None,
+        }
+    }
+
     pub(super) fn cursor(home: &Path, config_target: &ConfigTarget) -> Self {
         Self {
             path: home.join(".cursor").join("mcp.json"),
@@ -1304,6 +1341,10 @@ impl McpConfigWrite {
 
     pub(super) fn merge_into(&self, root: &mut Map<String, Value>) -> Result<()> {
         match self.kind {
+            McpConfigKind::Antigravity => {
+                let servers = object_entry_mut(root, "mcpServers")?;
+                servers.insert("moraine".to_string(), self.server_value());
+            }
             McpConfigKind::Cursor => {
                 let servers = object_entry_mut(root, "mcpServers")?;
                 servers.insert("moraine".to_string(), self.server_value());
@@ -1338,6 +1379,10 @@ impl McpConfigWrite {
 
     fn server_value(&self) -> Value {
         match self.kind {
+            McpConfigKind::Antigravity => serde_json::json!({
+                "command": "moraine",
+                "args": self.command.clone(),
+            }),
             McpConfigKind::Cursor => serde_json::json!({
                 "type": "stdio",
                 "command": "moraine",
@@ -1374,6 +1419,7 @@ impl McpConfigWrite {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum McpConfigKind {
+    Antigravity,
     Cursor,
     Pi,
     Omp,
@@ -1386,6 +1432,7 @@ enum McpConfigKind {
 impl McpConfigKind {
     fn label(self) -> &'static str {
         match self {
+            McpConfigKind::Antigravity => "Antigravity",
             McpConfigKind::Cursor => "Cursor",
             McpConfigKind::Pi => "Pi",
             McpConfigKind::Omp => "OMP",
@@ -1398,7 +1445,8 @@ impl McpConfigKind {
 
     fn format(self) -> McpConfigFormat {
         match self {
-            McpConfigKind::Cursor
+            McpConfigKind::Antigravity
+            | McpConfigKind::Cursor
             | McpConfigKind::Pi
             | McpConfigKind::Omp
             | McpConfigKind::PrimeAgent
@@ -1587,6 +1635,13 @@ pub(super) fn kiro_args(config_target: &ConfigTarget, moraine_command: &str) -> 
         command_args,
         "--force".to_string(),
     ]
+}
+
+fn antigravity_snippet(config_target: &ConfigTarget) -> String {
+    snippet(
+        "Add this server to ~/.gemini/config/mcp_config.json for Antigravity & Antigravity IDE",
+        Value::Object(McpConfigWrite::antigravity(Path::new("~"), config_target).snippet_root()),
+    )
 }
 
 fn cursor_snippet(config_target: &ConfigTarget) -> String {

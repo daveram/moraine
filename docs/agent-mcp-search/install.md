@@ -492,6 +492,25 @@ Equivalent manual config:
 }
 ```
 
+## Antigravity (App, CLI & IDE)
+
+Google Antigravity and Antigravity IDE read MCP server definitions from `mcp_config.json`. For global use, `moraine setup antigravity` (or `moraine setup antigravity-ide`) creates or updates `~/.gemini/config/mcp_config.json`.
+
+Alternatively, configure `~/.gemini/config/mcp_config.json` manually:
+
+```json
+{
+  "mcpServers": {
+    "moraine": {
+      "command": "moraine",
+      "args": ["run", "mcp"]
+    }
+  }
+}
+```
+
+Antigravity also discovers workspace plugins from `.agents/plugins/` or `plugins/moraine/`.
+
 ## Cursor
 
 Cursor reads MCP server definitions from `mcp.json`. For global use,

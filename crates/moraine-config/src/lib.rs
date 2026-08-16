@@ -13,6 +13,7 @@ use std::path::{Component, Path, PathBuf};
 pub const BUILD_VERSION: &str = env!("MORAINE_BUILD_VERSION");
 
 pub const KNOWN_INGEST_HARNESSES: &[&str] = &[
+    "antigravity",
     "codex",
     "claude-code",
     "cursor",
@@ -716,6 +717,15 @@ fn default_sources() -> Vec<IngestSource> {
         "~/.config/Cursor/User"
     };
     let mut sources = vec![
+        IngestSource {
+            name: "antigravity".to_string(),
+            harness: "antigravity".to_string(),
+            enabled: true,
+            glob: "~/.gemini/antigravity/brain/*/.system_generated/logs/transcript.jsonl"
+                .to_string(),
+            watch_root: "~/.gemini/antigravity/brain".to_string(),
+            format: SourceFormat::Jsonl,
+        },
         IngestSource {
             name: "codex".to_string(),
             harness: "codex".to_string(),
@@ -3892,7 +3902,7 @@ watch_root = "~/.custom/sessions"
         std::fs::remove_file(&path).ok();
         assert!(
             format!("{err:#}").contains(
-                "expected one of: codex, claude-code, cursor, hermes, kiro-cli, kimi-cli, nac, opencode, pi-coding-agent, prime-agent, qwen-code"
+                "expected one of: antigravity, codex, claude-code, cursor, hermes, kiro-cli, kimi-cli, nac, opencode, pi-coding-agent, prime-agent, qwen-code"
             ),
             "unexpected error: {err:#}"
         );
@@ -3915,7 +3925,7 @@ watch_root = "~/.claude/projects"
         std::fs::remove_file(&path).ok();
         assert!(
             format!("{err:#}").contains(
-                "expected one of: codex, claude-code, cursor, hermes, kiro-cli, kimi-cli, nac, opencode, pi-coding-agent, prime-agent, qwen-code"
+                "expected one of: antigravity, codex, claude-code, cursor, hermes, kiro-cli, kimi-cli, nac, opencode, pi-coding-agent, prime-agent, qwen-code"
             ),
             "unexpected error: {err:#}"
         );
